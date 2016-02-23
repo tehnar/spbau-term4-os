@@ -1,11 +1,27 @@
 #include "interrupt.h"
 #include "print.h"
 
+struct idt_ptr {
+    uint16_t size;
+    uint64_t base;
+} __attribute__((packed));
+
+typedef struct idt_ptr idt_ptr_t;
+
+struct idt_descriptor {
+    uint16_t offset_low;
+    uint16_t segment_selector;
+    uint8_t ist;
+    uint8_t flags;    
+    uint16_t offset_mid;
+    uint32_t offset_high;
+    uint32_t reserved;        
+} __attribute__((packed));
+
+typedef struct idt_descriptor idt_descriptor_t;
+
 idt_descriptor_t idt_table[IDT_TABLE_SIZE];
 idt_ptr_t idt_ptr;
-
-extern void (*default_handler_wrapper);
-extern void (*default_handler_err_wrapper);
 
 void interrupt_init(int interrupt_num, void *handler_ptr, uint8_t type) {
     idt_descriptor_t entry;
