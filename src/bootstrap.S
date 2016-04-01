@@ -129,9 +129,14 @@ setup_identity_mapping:
 	movl %eax, 8(%edx)
 	movl %eax, 4088(%edx)
 
+	addl $PAGE_SIZE, %eax
+	movl %eax, 16(%edx)
+	addl $PAGE_SIZE, %eax
+	movl %eax, 24(%edx)
+
 	addl $PAGE_SIZE, %edx
 	movl $(PTE_LARGE | PTE_PRESENT | PTE_WRITE), %eax
-	movl $1024, %ecx
+	movl $2048, %ecx
 1:
 	movl %eax, (%edx)
 	addl $0x200000, %eax
@@ -247,6 +252,8 @@ start64:
 
 	.bss
 	.global init_stack_top
+	.global init_stack_bottom
 	.align 0x1000
+init_stack_bottom:
 	.space 0x2000
 init_stack_top:

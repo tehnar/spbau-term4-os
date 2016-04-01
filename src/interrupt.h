@@ -39,11 +39,23 @@
     POPAD \
     "iretq;");  
 
+#define WRAP_POP_INTERRUPT(func) void func##_wrapper();\
+    __asm__( \
+    #func"_wrapper: "\
+    PUSHAD \
+    "cld; \
+    call " #func ";" \
+    "add $8, %rsp;" \
+    POPAD \
+    "iretq;");  
+
 static inline void interrupt_enable()
-{ __asm__ volatile ("sti"); }
+{ __asm__ volatile ("sti" : : : "cc"); }
+//{ __asm__ volatile ("sti"); }
 
 static inline void interrupt_disable()
-{ __asm__ volatile ("cli"); }
+{ __asm__ volatile ("cli" : : : "cc"); }
+//{ __asm__ volatile ("cli"); }
 
 void idt_init();
 

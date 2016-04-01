@@ -1,5 +1,5 @@
 #include "interrupt.h"
-#include "print.h"
+#include "stdio.h"
 
 struct idt_ptr {
     uint16_t size;
@@ -36,8 +36,18 @@ void interrupt_init(int interrupt_num, void *handler_ptr, uint8_t type) {
     idt_table[interrupt_num] = entry;    
 }
 
+void empty_handler(){};
+void empty_pop_handler(){};
+
+WRAP_INTERRUPT(empty_handler);
+WRAP_POP_INTERRUPT(empty_pop_handler);
 void idt_init() { 
     idt_ptr.size = sizeof(idt_descriptor_t) * IDT_TABLE_SIZE - 1;
     idt_ptr.base = (uint64_t) idt_table;
     __asm__ volatile ("lidt (%0)" : : "a"(&idt_ptr));
+	for (int i = 0; i < IDT_TABLE_SIZE; i++)
+		interrupt_init(i, &empty_handler_wrapper, INTERRUPT_INTGATE_TYPE);
+	uint8_t error_interrupt_numbers[] = {8, 10, 11, 12, 13, 14, 17, 30};
+	for (int i = 0; i < 8; i++)
+		interrupt_init(error_interrupt_numbers[i], &empty_pop_handler_wrapper, INTERRUPT_INTGATE_TYPE);	
 }

@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <stddef.h>
-#include "print.h"
+#include "stdio.h"
 #include "uart.h"
 
 static void put(char **buf_ptr, int *len_ptr, char c) {
