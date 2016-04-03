@@ -2,7 +2,9 @@
 #include "memory.h"
 #include "stdio.h"
 #include "list.h"
+#include "threads.h"
 
+static spinlock_t kmem_lock;
 
 struct kmem_slab_ops {
 	void *(*alloc)(struct kmem_cache *, struct kmem_slab *);
@@ -104,8 +106,9 @@ void *kmem_cache_alloc(struct kmem_cache *cache)
 		return ptr;
 	}
 
-	if (list_empty(&cache->free_list) && !kmem_cache_grow(cache))
+	if (list_empty(&cache->free_list) && !kmem_cache_grow(cache)) {
 		return 0;
+    }
 
 	struct list_head *node = list_first(&cache->free_list);
 	struct kmem_slab *slab = LIST_ENTRY(node, struct kmem_slab, link);
@@ -486,10 +489,14 @@ void *kmem_alloc(size_t size)
 {
 	const int i = kmem_cache_index(size);
 
-	if (i == -1)
+	if (i == -1) {
 		return 0;
+    }
 
-	return kmem_cache_alloc(kmem_pool[i]);
+    lock(&kmem_lock);
+	void *result = kmem_cache_alloc(kmem_pool[i]);
+    unlock(&kmem_lock);
+    return result;
 }
 
 void kmem_free(void *ptr)
@@ -499,10 +506,13 @@ void kmem_free(void *ptr)
 
 	struct kmem_slab *slab = kmem_get_slab(ptr);
 
-	if (!slab)
+	if (!slab) {
 		return;
+    }
 
+    lock(&kmem_lock);
 	kmem_cache_free(slab->cache, ptr);
+    unlock(&kmem_lock);
 }
 
 void setup_alloc(void)

@@ -5,6 +5,7 @@
 #include "balloc.h"
 #include "stdio.h"
 #include "misc.h"
+#include "threads.h"
 
 #define MAX_MEMORY_NODES (1 << PAGE_NODE_BITS)
 
@@ -13,6 +14,7 @@ static int memory_nodes;
 static LIST_HEAD(node_order);
 static struct list_head *node_type[NT_COUNT];
 
+static spinlock_t memory_lock;
 
 struct memory_node *memory_node_get(int id)
 { return &nodes[id]; }
@@ -354,7 +356,10 @@ struct page *__alloc_pages(int order, int type)
 
 struct page *alloc_pages(int order)
 {
-	return __alloc_pages(order, NT_HIGH);
+    lock(&memory_lock);
+	struct page* result = __alloc_pages(order, NT_HIGH);
+    unlock(&memory_lock);
+    return result;
 }
 
 void free_pages(struct page *pages, int order)
@@ -362,7 +367,9 @@ void free_pages(struct page *pages, int order)
 	if (!pages)
 		return;
 
+    lock(&memory_lock);
 	struct memory_node *node = page_node(pages);
 
 	free_pages_node(pages, order, node);
+    unlock(&memory_lock);
 }

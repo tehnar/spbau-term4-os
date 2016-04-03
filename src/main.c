@@ -8,108 +8,105 @@
 #include "balloc.h"
 #include "paging.h"
 #include "kmem_cache.h"
+#include "threads.h"
 
-static bool range_intersect(phys_t l0, phys_t r0, phys_t l1, phys_t r1)
-{
-	if (r0 <= l1)
-		return false;
-	if (r1 <= l0)
-		return false;
-	return true;
-}
-
-static void buddy_smoke_test(void)
-{
-#define PAGES 10
-	struct page *page[PAGES];
-	int order[PAGES];
-
-	for (int i = 0; i != PAGES; ++i) {
-		page[i] = alloc_pages(i);
-		if (page[i]) {
-			const phys_t begin = page_paddr(page[i]);
-			const phys_t end = begin + (PAGE_SIZE << i);
-			printf("allocated [%#llx-%#llx]\n", begin, end - 1);
-			order[i] = i;
-		}
-	}
-
-	for (int i = 0; i != PAGES - 1; ++i) {
-		if (!page[i])
-			break;
-		for (int j = i + 1; j != PAGES; ++j) {
-			if (!page[j])
-				break;
-
-			const phys_t ibegin = page_paddr(page[i]);
-			const phys_t iend = ibegin + (PAGE_SIZE << order[i]);
-
-			const phys_t jbegin = page_paddr(page[j]);
-			const phys_t jend = jbegin + (PAGE_SIZE << order[j]);
-
-			DBG_ASSERT(!range_intersect(ibegin, iend, jbegin, jend));
-		}
-	}
-
-	for (int i = 0; i != PAGES; ++i) {
-		if (!page[i])
-			continue;
-
-		const phys_t begin = page_paddr(page[i]);
-		const phys_t end = begin + (PAGE_SIZE << i);
-		printf("freed [%#llx-%#llx]\n", begin, end - 1);
-		free_pages(page[i], order[i]);
-	}
-#undef PAGES
-}
-
-struct intlist {
-	struct list_head link;
-	int data;
-};
-
-static void slab_smoke_test(void)
-{
-#define ALLOCS 1000000
-	struct kmem_cache *cache = KMEM_CACHE(struct intlist);
-	LIST_HEAD(head);
-	int i;
-
-	for (i = 0; i != ALLOCS; ++i) {
-		struct intlist *node = kmem_cache_alloc(cache);
-
-		if (!node)
-			break;
-		node->data = i;
-		list_add_tail(&node->link, &head);
-	}
-
-	printf("Allocated %d nodes\n", i);
-
-	while (!list_empty(&head)) {
-		struct intlist *node = LIST_ENTRY(list_first(&head),
-					struct intlist, link);
-
-		list_del(&node->link);
-		kmem_cache_free(cache, node);
-	}
-
-	kmem_cache_destroy(cache);
-#undef ALLOCS
-}
-
-void interrupt_timer_handler() { 
-    static int counter = 0;
-    counter++;
-    if (counter * PIT_MAX_RATE >= PIT_FREQUENCY) {
-        counter = 0;
-        puts("Hello, OS!");                     
+void test_runner_simple(void *args) {
+    int arg =  *((int*)args);
+    printf("Started processing of thread %d\n", arg);
+    for (int i = 0; i < 5; i++) {
+        printf("Thread %d, iteration %d\n", arg, i);
+        yield();
     }
-    pic_eoi(0);                       
 }
 
-WRAP_INTERRUPT(interrupt_timer_handler);
+#define TEST_THREAD_COUNT 10
+void test_threads_simple() {
+    int args[TEST_THREAD_COUNT];
+    pid_t threads[TEST_THREAD_COUNT];
+    for (int i = 0; i < TEST_THREAD_COUNT; i++) {
+        args[i] = i;
+        threads[i] = thread_create(&test_runner_simple, (void*) &args[i]);    
+        printf("Created thread with pid %d\n", threads[i]);
+    }
 
+    for (int i = 0; i < TEST_THREAD_COUNT; i++) 
+        thread_start(threads[i]);
+    for (int i = 0; i < TEST_THREAD_COUNT; i++) {
+        thread_join(threads[i], NULL);
+        printf("Thread %d (pid %d) joined\n", i, threads[i]);
+    }
+    puts("Test simple finished");
+}
+#undef TEST_THREAD_COUNT
+
+uint64_t calc() {
+    uint64_t sum = 0;
+    for (int i = 0; i < (int) 1e8; i++) {
+        sum += i;
+    }
+    return sum;
+}
+
+spinlock_t l;
+void func1(void *args) {
+    int* state_ptr = (int*) args;
+    lock(&l);
+    puts("func1");
+    DBG_ASSERT(*state_ptr == 0);
+    uint64_t sum = calc();
+    DBG_ASSERT(*state_ptr == 0);
+    printf("func1 finished, sum=%llu\n", sum);
+    *state_ptr = 1;
+    unlock(&l);
+    thread_exit(sum);
+}
+
+
+void func2(void *args) {
+     int* state_ptr = (int*) args;
+     DBG_ASSERT(*state_ptr == 0);
+     lock(&l);
+     puts("func2");
+     DBG_ASSERT(*state_ptr == 1);
+     uint64_t sum = calc();
+     DBG_ASSERT(*state_ptr == 1);
+     printf("func2 finished, sum=%llu\n", sum);
+     unlock(&l);
+     thread_exit(sum);
+}
+
+void test_threads_lock() {
+    create_spinlock(&l);
+    int state = 0;
+    pid_t t1 = thread_create(&func1, (void*) &state), t2 = thread_create(&func2, (void*) &state);
+    thread_start(t1);        
+    thread_start(t2);
+    uint64_t val = 0;
+    thread_join(t1, (void**) &val);
+    DBG_ASSERT(val == 4999999950000000);
+    thread_join(t2, (void**) &val);
+    DBG_ASSERT(val == 4999999950000000);
+    printf("Threads joined (pids %d, %d)!\n", t1, t2);
+}
+
+void test_threads_binary_tree(void *arg) {
+    long long depth = (long long) arg;
+    printf("Enter test binary tree, depth=%lld, thread id=%d\n", depth, get_current_thread());
+    if (!depth) {
+        thread_exit(1);
+        DBG_ASSERT(0);
+    }
+    calc();
+    pid_t l = thread_create(&test_threads_binary_tree, (void*) (depth - 1));
+    pid_t r = thread_create(&test_threads_binary_tree, (void*) (depth - 1));
+    thread_start(l);
+    thread_start(r);
+    int x = 0, y = 0;
+    thread_join(r, (void**) &x);
+    thread_join(l, (void**) &y);
+    printf("Thread %d at depth %lld finished with %d\n", get_current_thread(), depth, x + y);
+    thread_exit(x + y);
+}
 void main(void) { 
     pic_init();      
     uart_init();
@@ -119,15 +116,13 @@ void main(void) {
     setup_buddy();
     setup_paging();
     setup_alloc();
-    timer_init(PIT_MAX_RATE, &interrupt_timer_handler_wrapper);
-    
-//    setup_time();
+    threads_init();
     interrupt_enable();
-	buddy_smoke_test();
-	slab_smoke_test();
 
-	while (1);
-
+    test_threads_simple();
+    test_threads_lock();
+    test_threads_binary_tree((void*) 4);
+    puts("All test completed!");
 
     while (1);
 }
