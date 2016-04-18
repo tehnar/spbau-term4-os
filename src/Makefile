@@ -11,7 +11,8 @@ ASM := bootstrap.S videomem.S threads_asm.S
 AOBJ:= $(ASM:.S=.o)
 ADEP:= $(ASM:.S=.d)
 
-SRC := main.c interrupt.c timer.c pic.c uart.c stdio.c misc.c paging.c memory.c balloc.c kmem_cache.c list.c string.c threads.c 
+SRC := main.c interrupt.c timer.c pic.c uart.c stdio.c misc.c paging.c memory.c \
+   	balloc.c kmem_cache.c list.c string.c threads.c fs.c initramfs.c 
 OBJ := $(AOBJ) $(SRC:.c=.o)
 DEP := $(ADEP) $(SRC:.c=.d)
 

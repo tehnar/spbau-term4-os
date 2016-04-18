@@ -9,7 +9,9 @@ struct list_head {
 	struct list_head *prev;
 };
 
-#define LIST_HEAD_INIT(name) { &(name), &(name) }
+typedef struct list_head list_head_t;
+
+#define LIST_HEAD_INIT(name) (list_head_t) { &(name), &(name) }
 #define LIST_HEAD(name) struct list_head name = LIST_HEAD_INIT(name)
 #define LIST_ENTRY(ptr, type, member) CONTAINER_OF(ptr, type, member)
 
