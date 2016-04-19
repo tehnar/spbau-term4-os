@@ -27,36 +27,36 @@ static uint32_t read_int(char *str) {
 static char *start, *end;
 
 void setup_initramfs() {
-	extern const uint32_t mboot_info;
- 	multiboot_info_t *multiboot_info = (multiboot_info_t *) (uintptr_t) mboot_info;
- 	
- 	if (!(multiboot_info->flags & (1<<3))) {
+    extern const uint32_t mboot_info;
+    multiboot_info_t *multiboot_info = (multiboot_info_t *) (uintptr_t) mboot_info;
+    
+    if (!(multiboot_info->flags & (1<<3))) {
         puts("No modules from multiboot!");
         return;
- 	}
+    }
 
- 	bool found = 0;
+    bool found = 0;
     
     multiboot_module_t *module = (multiboot_module_t*) (uintptr_t) multiboot_info->mods_addr;
- 	for (uint32_t i = 0; i < multiboot_info->mods_count; i++, module++) {
- 		if (module->mod_end - module->mod_start >= sizeof(cpio_header_t) && 
+    for (uint32_t i = 0; i < multiboot_info->mods_count; i++, module++) {
+        if (module->mod_end - module->mod_start >= sizeof(cpio_header_t) && 
                 !memcmp((void*) (uintptr_t) module->mod_start, CPIO_HEADER_MAGIC, 6)){
             found = 1;
- 			break;
- 		}
- 	}
+            break;
+        }
+    }
 
- 	if(!found) {
+    if(!found) {
         puts("Can't find cpio module");
         return;
- 	}
+    }
 
     start = (char*) (uintptr_t) module->mod_start;
     end = (char*) (uintptr_t) module->mod_end;
  
-	printf("reserve memory range: %llu-%llu for initramfs\n",
-			(unsigned long long) start,
-			(unsigned long long) end- 1);
+    printf("reserve memory range: %llu-%llu for initramfs\n",
+            (unsigned long long) start,
+            (unsigned long long) end- 1);
     balloc_add_region((phys_t) start, end - start);
     balloc_reserve_region((phys_t) start, end - start);
 }
