@@ -15,6 +15,7 @@
 
 void print_dir(char *name) {
     file_t *dir = readdir(name);
+    DBG_ASSERT(dir);
     printf("Contents of %s:\n", dir->name);
     for (list_head_t *node = dir->dir_files_head.next; node != &dir->dir_files_head; node = node->next) {
         file_t *file = ((dir_files_t*) node)->file;
@@ -32,7 +33,7 @@ void print_dir(char *name) {
     puts("============");            
 }
 
-void test_fs() {
+void test_initramfs_contents() {
     print_dir("/");
     print_dir("/test/");
     print_dir("/test/empty_dir/");
@@ -60,6 +61,42 @@ void test_fs() {
     close(file);
 }
 
+void fill_file(file_desc_t *desc, char *str, int cnt) {
+    size_t len = strlen(str);
+    for (int i = 0; i < cnt; i++) {
+        DBG_ASSERT(write(desc, str, len) == len);
+    }
+}
+
+void expect_read(file_desc_t *desc, uint64_t offset, char *str) {
+    char buffer[1024];
+    size_t len = strlen(str);
+    seek(desc, offset);
+    DBG_ASSERT(read(desc, buffer, len) == len);
+    DBG_ASSERT(!memcmp(str, buffer, len));
+}
+
+void test_fs() {
+    DBG_ASSERT(mkdir("/1234/"));
+    DBG_ASSERT(mkdir("/1234/12345"));    
+    file_desc_t *desc;
+    DBG_ASSERT(desc = open("/1234/test.txt"));
+    fill_file(desc, "12345", 1024);
+    close(desc);
+    DBG_ASSERT(desc = open("/1234/test.txt"));
+    expect_read(desc, 1003, "45123");
+    expect_read(desc, 0, "123451234512345");
+    close(desc);
+    print_dir("/1234/");
+    puts("(Expected file /1234/test.txt with size=5120 and directory /1234/12345)");
+    DBG_ASSERT(desc = open("/1234/12345/empty"));
+    char buffer[1024];
+    DBG_ASSERT(!read(desc, buffer, 1024));
+    close(desc);
+    print_dir("/1234/12345/");
+    puts("(Expected file empty with size=0)");
+}
+
 void main(void) { 
     pic_init();      
     uart_init();
@@ -75,8 +112,10 @@ void main(void) {
     init_fs();
     read_initramfs();
     
+    test_initramfs_contents();
     test_fs();
 
+    puts("Tests completed");
     while (1);
 }
 

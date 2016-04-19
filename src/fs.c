@@ -71,13 +71,16 @@ file_t *readdir(char *name) {
     parent_dir_name[pos + 1] = 0;
     file_t* parent_dir = readdir(parent_dir_name);
 
+    lock(&parent_dir->lock);
     for (list_head_t* node = list_first(&parent_dir->dir_files_head); 
             node != &parent_dir->dir_files_head; node = node->next) {
         dir_files_t *entry = (dir_files_t*) node;
         if (strcmp(entry->file->name, name) == 0 && entry->file->type == DIRECTORY) {
+            unlock(&parent_dir->lock);
             return entry->file;
         } 
     } 
+    unlock(&parent_dir->lock);
     return NULL;
 }
 
@@ -91,6 +94,8 @@ int mkdir(char *name) {
     strncpy(parent_dir_name, name, pos + 1);
     parent_dir_name[pos + 1] = 0;
     file_t *parent_dir = readdir(parent_dir_name);
+    lock(&parent_dir->lock);
+
     dir_files_t *node = (dir_files_t*) kmem_alloc(sizeof(dir_files_t));
     list_add((list_head_t*) node, &parent_dir->dir_files_head);
 
@@ -104,6 +109,7 @@ int mkdir(char *name) {
         node->file->name[len] = '/';
         node->file->name[len + 1] = 0;
     }
+    unlock(&parent_dir->lock);
     return 1;
 }
 
@@ -117,18 +123,24 @@ file_desc_t* open(char* name) {
     strncpy(parent_dir_name, name, pos + 1);
     parent_dir_name[pos + 1] = 0;
     file_t *parent_dir = readdir(parent_dir_name);
+    lock(&parent_dir->lock);
+
     for (list_head_t* node = list_first(&parent_dir->dir_files_head); 
             node != &parent_dir->dir_files_head; node = node->next) {
         dir_files_t *entry = (dir_files_t*) node;
         if (strcmp(entry->file->name, name) == 0) {
+            unlock(&parent_dir->lock);
             return make_file_desc(entry->file);
         } 
     } 
     
-    return create_file(parent_dir, name);
+    file_desc_t *desc = create_file(parent_dir, name);
+    unlock(&parent_dir->lock);
+    return desc;
 }
 
 void seek(file_desc_t *file, uint64_t offset) {
+    lock(&file->file->lock);
     while (file->cur_offset / CHUNK_SIZE > offset / CHUNK_SIZE) {
         file->cur_chunk = file->cur_chunk->prev;        
         size_t offset_change = file->cur_offset % CHUNK_SIZE;
@@ -142,6 +154,7 @@ void seek(file_desc_t *file, uint64_t offset) {
         file->cur_offset += CHUNK_SIZE - file->cur_offset % CHUNK_SIZE;
     }    
     file->cur_offset = offset;
+    unlock(&file->file->lock);
 }
 
 size_t read(file_desc_t *file, char *buffer, size_t count) {
@@ -190,10 +203,6 @@ size_t write(file_desc_t *file, char *buffer, size_t count) {
     unlock(&file->file->lock);
     return write_bytes;
 }
-
-int eof(file_desc_t *file) {
-    return file->cur_offset == file->file->size;
-} 
 
 void close(file_desc_t *desc) {
     kmem_free(desc);
