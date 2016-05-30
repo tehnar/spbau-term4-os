@@ -4,15 +4,6 @@
 #include "stdio.h"
 #include "timer.h"
 
-typedef enum {NOT_STARTED, RUNNING, FINISHED, WAIT_FOR_JOIN} thread_state;
-struct thread {
-    uint64_t *rsp, *rsp_start;
-    uint64_t exit_code;
-    thread_state state;
-};
-
-typedef struct thread thread_t;
-
 static volatile thread_t threads[MAX_THREADS];
 static volatile pid_t threads_head;
 static volatile pid_t threads_next[MAX_THREADS];
@@ -61,6 +52,23 @@ void schedule() {
 
 WRAP_INTERRUPT(schedule);
 
+#define IO_MAP_BITS  BIT_CONST(16)
+#define IO_MAP_WORDS (IO_MAP_BITS / sizeof(unsigned long))
+
+struct tss {
+	uint32_t rsrv0;
+	uint64_t rsp[3];
+	uint64_t rsrv1;
+	uint64_t ist[7];
+	uint64_t rsrv2;
+	uint16_t rsrv3;
+	uint16_t iomap_base;
+	unsigned long iomap[IO_MAP_WORDS + 1];
+} __attribute__((packed));
+
+typedef struct tss tss_t;
+static tss_t tss;
+
 void threads_init() {
     threads[0].state = RUNNING;
     for (int i = 1; i < MAX_THREADS - 1; i++) {
@@ -72,6 +80,21 @@ void threads_init() {
     threads_next[MAX_THREADS - 1] = 1;
     threads_prev[1] = MAX_THREADS - 1;
     threads_head = 1;
+
+    uint32_t* gdt_ptr = (uint32_t*)get_gdt_ptr();
+    uint64_t base = (uint64_t)&tss;
+    uint32_t limit = sizeof(tss) - 1;
+    uint32_t word0 = ((BITS(15, 0) & base) << 16) | (BITS(15, 0) & limit);
+    uint32_t word1 = (BITS(31, 24) & base) | (BITS(19, 16) & limit) | (1 << 15) | (3 << 13) | (9 << 8) | ((BITS(23, 16) & base) >> 16);
+    uint32_t word2 = (base) >> 32;
+    uint32_t word3 = 0;
+    int tss_index = 14;
+    gdt_ptr[tss_index + 0] = word0;
+    gdt_ptr[tss_index + 1] = word1;
+    gdt_ptr[tss_index + 2] = word2;
+    gdt_ptr[tss_index + 3] = word3;
+    load_tr(7 * 8);
+
     timer_init(PIT_MAX_RATE, &schedule_wrapper);
 }
 
@@ -90,6 +113,11 @@ pid_t thread_create(void (*fptr) (void *), void *arg) {
     volatile thread_t *new_thread = &threads[new_thread_id];
     new_thread->rsp_start = (uint64_t*) kmem_alloc(THREAD_STACK_SIZE);
     new_thread->rsp = new_thread->rsp_start + THREAD_STACK_SIZE;
+    *(--new_thread->rsp) = (uint64_t) KERNEL_DATA; //ss
+    *(--new_thread->rsp) = 0; //rsp
+    *(--new_thread->rsp) = 0; //rflags
+    *(--new_thread->rsp) = (uint64_t) KERNEL_CODE; //cs
+    // values above are needed for iretq 
     *(--new_thread->rsp) = (uint64_t) &thread_exit_with_no_code;
     *(--new_thread->rsp) = (uint64_t) fptr; 
     *(--new_thread->rsp) = (uint64_t) arg;
@@ -115,6 +143,8 @@ static void thread_run(pid_t thread_id) {
     if (thread_id != current_thread) {
         previous_thread = current_thread;
         current_thread = thread_id;
+        extern char init_stack_top[];
+        tss.rsp[0] = thread_id == 0 ? (uint64_t) init_stack_top : (uint64_t) threads[thread_id].rsp_start;     
         switch_threads((void**) &threads[previous_thread].rsp, (void*) threads[current_thread].rsp);
     }
 }
@@ -125,7 +155,8 @@ void thread_start(pid_t thread_id) {
     previous_thread = current_thread;
     current_thread = thread_id;
     threads[current_thread].state = RUNNING;
-    
+	extern char init_stack_top[];
+    tss.rsp[0] = thread_id == 0 ? (uint64_t) init_stack_top : (uint64_t) threads[thread_id].rsp_start;     
     // add thread to list of active threads
     threads_next[thread_id] = 0;
     threads_prev[thread_id] = threads_prev[0];
@@ -136,8 +167,8 @@ void thread_start(pid_t thread_id) {
     interrupt_enable();
 }
 
-pid_t get_current_thread() {
-    return current_thread;
+thread_t* get_current_thread() {
+    return (thread_t*) &threads[current_thread];
 }
 
 void yield() {

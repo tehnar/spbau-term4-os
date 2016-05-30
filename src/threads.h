@@ -12,6 +12,15 @@ static inline void barrier() {
     __asm__ volatile("": : :"memory");
 }
 
+typedef enum {NOT_STARTED, RUNNING, FINISHED, WAIT_FOR_JOIN} thread_state;
+struct thread {
+    uint64_t *rsp, *rsp_start;
+    uint64_t exit_code;
+    thread_state state;
+};
+
+typedef struct thread thread_t;
+
 struct spinlock {
     uint16_t users;
     uint16_t ticket;    
@@ -32,7 +41,7 @@ void yield();
 void thread_exit(uint64_t code);
 void threads_init();
 void thread_join(pid_t thread_id, void **retval);
-pid_t get_current_thread();
+thread_t* get_current_thread();
 
 void create_spinlock(spinlock_t* lock);
 

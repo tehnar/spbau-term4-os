@@ -12,7 +12,7 @@ void init_fs() {
     root.name[0] = '/';
 }
 
-static size_t get_last_separator(char *name) {
+static size_t get_last_separator(const char *name) {
     size_t len = strlen(name);
     if (len == 0 || name[0] != '/') {
         return -1;
@@ -34,7 +34,7 @@ static file_desc_t *make_file_desc(file_t *file) {
     return desc;
 }
 
-static file_desc_t *create_file(file_t *dir, char *name) {
+static file_desc_t *create_file(file_t *dir, const char *name) {
     file_t *file = (file_t*) kmem_alloc(sizeof(file_t)); 
     strcpy(file->name, name); 
     size_t len = strlen(name);
@@ -113,7 +113,7 @@ int mkdir(char *name) {
     return 1;
 }
 
-file_desc_t* open(char* name) {
+file_desc_t* open(const char* name) {
     int pos = get_last_separator(name);
     if (pos < 0) {
         return NULL;

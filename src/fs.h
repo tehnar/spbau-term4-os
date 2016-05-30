@@ -50,7 +50,7 @@ struct dir_files {
 
 
 void init_fs();
-file_desc_t *open(char *name);
+file_desc_t *open(const char *name);
 void close(file_desc_t *file);
 void seek(file_desc_t *file, uint64_t offset);
 size_t read(file_desc_t *file, char *buffer, size_t count);

@@ -38,9 +38,12 @@ void interrupt_init(int interrupt_num, void *handler_ptr, uint8_t type) {
 
 void empty_handler(){};
 void empty_pop_handler(){};
+void syscall_handler(uint64_t type, uint64_t rsi);
 
 WRAP_INTERRUPT(empty_handler);
 WRAP_POP_INTERRUPT(empty_pop_handler);
+WRAP_INTERRUPT(syscall_handler);
+
 void idt_init() { 
     idt_ptr.size = sizeof(idt_descriptor_t) * IDT_TABLE_SIZE - 1;
     idt_ptr.base = (uint64_t) idt_table;
@@ -50,4 +53,16 @@ void idt_init() {
 	uint8_t error_interrupt_numbers[] = {8, 10, 11, 12, 13, 14, 17, 30};
 	for (int i = 0; i < 8; i++)
 		interrupt_init(error_interrupt_numbers[i], &empty_pop_handler_wrapper, INTERRUPT_INTGATE_TYPE);	
+
+    interrupt_init(SYSCALL_INTERRUPT_NUMBER, &syscall_handler_wrapper, INTERRUPT_TRAP_TYPE | USER_PRIVILEGE); 
+}
+
+void syscall_handler(uint64_t type, uint64_t rsi) {
+    switch (type) {
+        case SYSCALL_WRITE:
+            printf("%s", rsi);
+            break; 
+        default:
+           DBG_ASSERT(0); // no other syscalls yet
+    }    
 }
